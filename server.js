@@ -3,7 +3,7 @@ import express from "express";
 const app = express();
 
 app.get("/", (req,res)=>{
-res.send("Server is working");
+res.send("BetterLife AI API running");
 });
 
 const PORT = process.env.PORT || 3000;
