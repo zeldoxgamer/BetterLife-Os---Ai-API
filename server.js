@@ -6,20 +6,14 @@ const app = express()
 
 app.use(express.json())
 
-/* REDIS CONNECTION */
-
 const redis = new Redis(process.env.REDIS_URL,{
 maxRetriesPerRequest:null,
 enableReadyCheck:false
 })
 
-/* ROOT */
-
 app.get("/",(req,res)=>{
 res.send("BetterLife AI API running 🚀")
 })
-
-/* AI COACH */
 
 app.post("/ai-coach",async(req,res)=>{
 
@@ -34,11 +28,11 @@ habits=[],
 habitProgress=[],
 bestHabit="",
 worstHabit=""
-} = req.body
+}=req.body
 
-/* TIME OF DAY */
+/* TIME */
 
-const hour = new Date().getHours()
+const hour=new Date().getHours()
 
 let timeOfDay="day"
 
@@ -52,15 +46,17 @@ else{
 timeOfDay="night"
 }
 
-/* CACHE KEY */
+/* RANDOM */
 
-const cacheKey=`coach:${habitScore}:${taskScore}:${timeOfDay}`
+const random=Math.floor(Math.random()*5)+1
 
-/* CHECK CACHE */
+const key=`coach:${habitScore}:${taskScore}:${timeOfDay}:${random}`
 
-const cached=await redis.get(cacheKey)
+const cached=await redis.get(key)
 
 if(cached){
+
+await redis.incr(`${key}:count`)
 
 return res.json({
 message:cached,
@@ -69,44 +65,29 @@ source:"cache"
 
 }
 
-/* SAFE TEXT */
-
-const habitsText = Array.isArray(habits) ? habits.join("\n") : ""
-const progressText = Array.isArray(habitProgress) ? habitProgress.join("\n") : ""
-
 /* PROMPT */
 
-const prompt = `
+const prompt=`
 You are an AI productivity coach.
 
-Time of day: ${timeOfDay}
+Time: ${timeOfDay}
 
 Habit score: ${habitScore}
 Task score: ${taskScore}
-Tasks completed: ${tasksCompleted}
-Best day: ${bestDay}
 
 Best habit: ${bestHabit}
 Weak habit: ${worstHabit}
 
-Habits:
-${habitsText}
-
-Habit progress:
-${progressText}
-
 Rules:
 
-- Write only 2 or 3 short lines.
-- Use simple emojis.
-- Do not use markdown symbols like ** or *.
-- Be motivational.
-- Mention the weak habit if relevant.
+- 2 or 3 short lines only
+- Use emojis
+- No markdown
 `
 
-/* GEMINI CALL */
+/* GEMINI */
 
-const response = await fetch(
+const response=await fetch(
 `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key=${process.env.GEMINI_KEY}`,
 {
 method:"POST",
@@ -121,22 +102,20 @@ parts:[{text:prompt}]
 }
 )
 
-const data = await response.json()
+const data=await response.json()
 
 let message=data.candidates[0].content.parts[0].text
-
-/* CLEAN MESSAGE */
 
 message=message
 .replace(/\*\*/g,"")
 .replace(/\*/g,"")
 .trim()
 
-/* SAVE CACHE FOREVER */
+/* SAVE */
 
-await redis.set(cacheKey,message)
+await redis.set(key,message)
 
-/* RESPONSE */
+await redis.set(`${key}:count`,1)
 
 res.json({
 message,
@@ -155,8 +134,6 @@ error:err.message
 
 })
 
-/* SERVER */
-
 app.listen(8080,"0.0.0.0",()=>{
-console.log("Server running on port 8080 🚀")
+console.log("Server running 🚀")
 })
