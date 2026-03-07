@@ -6,7 +6,7 @@ const app = express()
 
 app.use(express.json())
 
-/* REDIS */
+/* REDIS CONNECTION */
 
 const redis = new Redis(process.env.REDIS_URL,{
 maxRetriesPerRequest:null,
@@ -34,9 +34,27 @@ habits,
 habitProgress
 } = req.body
 
-/* CACHE KEY */
+/* TIME OF DAY */
 
-const cacheKey=`coach:${habitScore}:${taskScore}:${tasksCompleted}`
+const hour = new Date().getHours()
+
+let timeOfDay="day"
+
+if(hour<12){
+timeOfDay="morning"
+}
+else if(hour<18){
+timeOfDay="afternoon"
+}
+else{
+timeOfDay="night"
+}
+
+/* DAILY CACHE */
+
+const day = new Date().getDate()
+
+const cacheKey=`coach:${habitScore}:${taskScore}:${tasksCompleted}:${day}:${timeOfDay}`
 
 const cached=await redis.get(cacheKey)
 
@@ -54,7 +72,9 @@ source:"cache"
 const prompt = `
 You are an AI productivity coach.
 
-Analyze the user's productivity dashboard.
+Time of day: ${timeOfDay}
+
+User data:
 
 Habit score: ${habitScore}
 Task score: ${taskScore}
@@ -67,19 +87,27 @@ ${habits.join("\n")}
 Habit progress:
 ${habitProgress.join("\n")}
 
-Instructions:
+Rules:
 
-- Detect weak habits
-- Mention strong habits
-- Give advice
-- Use emojis
-- Return ONE short motivational message
+- Message must be 2 or 3 short lines only.
+- Use simple emojis.
+- Do not use markdown symbols like ** or *.
+- Keep the message motivational and clear.
+
+Morning:
+Motivate and help the user start the day.
+
+Afternoon:
+Encourage focus and productivity.
+
+Night:
+Give reflection and discipline advice.
 `
 
-/* GEMINI */
+/* GEMINI CALL */
 
 const response = await fetch(
-`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_KEY}`,
+`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key=${process.env.GEMINI_KEY}`,
 {
 method:"POST",
 headers:{
@@ -93,13 +121,22 @@ parts:[{text:prompt}]
 }
 )
 
-const data=await response.json()
+const data = await response.json()
 
-const message=data.candidates[0].content.parts[0].text
+let message=data.candidates[0].content.parts[0].text
 
-/* CACHE */
+/* CLEAN MARKDOWN */
 
-await redis.set(cacheKey,message,"EX",3600)
+message=message
+.replace(/\*\*/g,"")
+.replace(/\*/g,"")
+.trim()
+
+/* CACHE SAVE */
+
+await redis.set(cacheKey,message,"EX",86400)
+
+/* RESPONSE */
 
 res.json({
 message,
@@ -121,5 +158,5 @@ error:err.message
 /* SERVER */
 
 app.listen(8080,"0.0.0.0",()=>{
-console.log("Server running 🚀")
+console.log("Server running on port 8080 🚀")
 })
