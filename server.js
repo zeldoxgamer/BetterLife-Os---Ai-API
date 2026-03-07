@@ -26,12 +26,14 @@ app.post("/ai-coach",async(req,res)=>{
 try{
 
 const {
-habitScore,
-taskScore,
-tasksCompleted,
-bestDay,
-habits,
-habitProgress
+habitScore=0,
+taskScore=0,
+tasksCompleted=0,
+bestDay="",
+habits=[],
+habitProgress=[],
+bestHabit="",
+worstHabit=""
 } = req.body
 
 /* TIME OF DAY */
@@ -50,11 +52,11 @@ else{
 timeOfDay="night"
 }
 
-/* DAILY CACHE */
+/* CACHE KEY */
 
-const day = new Date().getDate()
+const cacheKey=`coach:${habitScore}:${taskScore}:${timeOfDay}`
 
-const cacheKey=`coach:${habitScore}:${taskScore}:${tasksCompleted}:${day}:${timeOfDay}`
+/* CHECK CACHE */
 
 const cached=await redis.get(cacheKey)
 
@@ -67,6 +69,11 @@ source:"cache"
 
 }
 
+/* SAFE TEXT */
+
+const habitsText = Array.isArray(habits) ? habits.join("\n") : ""
+const progressText = Array.isArray(habitProgress) ? habitProgress.join("\n") : ""
+
 /* PROMPT */
 
 const prompt = `
@@ -74,34 +81,27 @@ You are an AI productivity coach.
 
 Time of day: ${timeOfDay}
 
-User data:
-
 Habit score: ${habitScore}
 Task score: ${taskScore}
 Tasks completed: ${tasksCompleted}
 Best day: ${bestDay}
 
+Best habit: ${bestHabit}
+Weak habit: ${worstHabit}
+
 Habits:
-${habits.join("\n")}
+${habitsText}
 
 Habit progress:
-${habitProgress.join("\n")}
+${progressText}
 
 Rules:
 
-- Message must be 2 or 3 short lines only.
+- Write only 2 or 3 short lines.
 - Use simple emojis.
 - Do not use markdown symbols like ** or *.
-- Keep the message motivational and clear.
-
-Morning:
-Motivate and help the user start the day.
-
-Afternoon:
-Encourage focus and productivity.
-
-Night:
-Give reflection and discipline advice.
+- Be motivational.
+- Mention the weak habit if relevant.
 `
 
 /* GEMINI CALL */
@@ -125,16 +125,16 @@ const data = await response.json()
 
 let message=data.candidates[0].content.parts[0].text
 
-/* CLEAN MARKDOWN */
+/* CLEAN MESSAGE */
 
 message=message
 .replace(/\*\*/g,"")
 .replace(/\*/g,"")
 .trim()
 
-/* CACHE SAVE */
+/* SAVE CACHE FOREVER */
 
-await redis.set(cacheKey,message,"EX",86400)
+await redis.set(cacheKey,message)
 
 /* RESPONSE */
 
