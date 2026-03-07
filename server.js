@@ -1,59 +1,139 @@
-import express from "express";
-import Redis from "ioredis";
+import express from "express"
+import Redis from "ioredis"
+import fetch from "node-fetch"
 
-const app = express();
+const app = express()
 
-app.use(express.json());
+app.use(express.json())
 
-/* redis connection */
+/* REDIS CONNECTION */
 
 const redis = new Redis(process.env.REDIS_URL,{
 maxRetriesPerRequest:null,
 enableReadyCheck:false
-});
+})
 
-/* test route */
+/* ROOT */
 
-app.get("/", (req,res)=>{
-res.send("BetterLife AI API running");
-});
+app.get("/",(req,res)=>{
+res.send("BetterLife AI API running 🚀")
+})
 
-/* ai endpoint */
+/* AI COACH */
 
-app.post("/ai-coach", async (req,res)=>{
+app.post("/ai-coach",async(req,res)=>{
 
 try{
 
-const {habitScore,taskScore}=req.body;
+const {
+habitScore,
+taskScore,
+tasksCompleted,
+bestDay,
+habits,
+habitProgress
+} = req.body
 
-const key=`coach:${habitScore}:${taskScore}`;
+/* CACHE KEY */
 
-const cached=await redis.get(key);
+const cacheKey = `coach:${habitScore}:${taskScore}:${tasksCompleted}`
+
+/* CHECK CACHE */
+
+const cached = await redis.get(cacheKey)
 
 if(cached){
-return res.json({message:cached,source:"cache"});
+
+return res.json({
+analysis:JSON.parse(cached),
+source:"cache"
+})
+
 }
 
-const message=`🔥 Habit score ${habitScore}, Task score ${taskScore}. Stay consistent and keep improving your daily habits.`;
+/* PROMPT */
 
-/* save cache */
+const prompt = `
+You are an AI productivity coach.
 
-await redis.set(key,message);
+Analyze the user's productivity dashboard and give useful insights.
 
-res.json({message,source:"generated"});
+Habit score: ${habitScore}
+Task score: ${taskScore}
+Tasks completed: ${tasksCompleted}
+Best day: ${bestDay}
+
+Habits list:
+${habits.join("\n")}
+
+Habit progress:
+${habitProgress.join("\n")}
+
+Rules:
+- Use emojis in messages.
+- Messages must feel human and motivational.
+- Mention weak habits if detected.
+- Keep messages concise but insightful.
+
+Return valid JSON with:
+
+motivation
+dailyFocus
+weakHabit
+weakHabitAdvice
+weeklyInsight
+productivityTrend
+burnoutRisk
+`
+
+/* GEMINI CALL */
+
+const response = await fetch(
+`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_KEY}`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+contents:[{
+parts:[{text:prompt}]
+}]
+})
+}
+)
+
+const data = await response.json()
+
+const text = data.candidates[0].content.parts[0].text
+
+const analysis = JSON.parse(text)
+
+/* SAVE CACHE */
+
+await redis.set(cacheKey,JSON.stringify(analysis),"EX",3600)
+
+/* RESPONSE */
+
+res.json({
+analysis,
+source:"ai"
+})
 
 }catch(err){
 
-console.log(err);
+console.log(err)
 
-res.status(500).json({error:err.message});
+res.status(500).json({
+error:err.message
+})
 
 }
 
-});
+})
 
-/* start server */
+/* SERVER */
 
 app.listen(8080,"0.0.0.0",()=>{
-console.log("Server started on port 8080");
-});
+console.log("Server running on port 8080 🚀")
+})
