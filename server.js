@@ -6,7 +6,7 @@ const app = express()
 
 app.use(express.json())
 
-/* REDIS CONNECTION */
+/* REDIS */
 
 const redis = new Redis(process.env.REDIS_URL,{
 maxRetriesPerRequest:null,
@@ -36,16 +36,14 @@ habitProgress
 
 /* CACHE KEY */
 
-const cacheKey = `coach:${habitScore}:${taskScore}:${tasksCompleted}`
+const cacheKey=`coach:${habitScore}:${taskScore}:${tasksCompleted}`
 
-/* CHECK CACHE */
-
-const cached = await redis.get(cacheKey)
+const cached=await redis.get(cacheKey)
 
 if(cached){
 
 return res.json({
-analysis:JSON.parse(cached),
+message:cached,
 source:"cache"
 })
 
@@ -56,37 +54,29 @@ source:"cache"
 const prompt = `
 You are an AI productivity coach.
 
-Analyze the user's productivity dashboard and give useful insights.
+Analyze the user's productivity dashboard.
 
 Habit score: ${habitScore}
 Task score: ${taskScore}
 Tasks completed: ${tasksCompleted}
 Best day: ${bestDay}
 
-Habits list:
+Habits:
 ${habits.join("\n")}
 
 Habit progress:
 ${habitProgress.join("\n")}
 
-Rules:
-- Use emojis in messages.
-- Messages must feel human and motivational.
-- Mention weak habits if detected.
-- Keep messages concise but insightful.
+Instructions:
 
-Return valid JSON with:
-
-motivation
-dailyFocus
-weakHabit
-weakHabitAdvice
-weeklyInsight
-productivityTrend
-burnoutRisk
+- Detect weak habits
+- Mention strong habits
+- Give advice
+- Use emojis
+- Return ONE short motivational message
 `
 
-/* GEMINI CALL */
+/* GEMINI */
 
 const response = await fetch(
 `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_KEY}`,
@@ -103,20 +93,16 @@ parts:[{text:prompt}]
 }
 )
 
-const data = await response.json()
+const data=await response.json()
 
-const text = data.candidates[0].content.parts[0].text
+const message=data.candidates[0].content.parts[0].text
 
-const analysis = JSON.parse(text)
+/* CACHE */
 
-/* SAVE CACHE */
-
-await redis.set(cacheKey,JSON.stringify(analysis),"EX",3600)
-
-/* RESPONSE */
+await redis.set(cacheKey,message,"EX",3600)
 
 res.json({
-analysis,
+message,
 source:"ai"
 })
 
@@ -135,5 +121,5 @@ error:err.message
 /* SERVER */
 
 app.listen(8080,"0.0.0.0",()=>{
-console.log("Server running on port 8080 🚀")
+console.log("Server running 🚀")
 })
