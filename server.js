@@ -8,11 +8,15 @@ app.use(express.json())
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const REDIS_URL = process.env.REDIS_URL
 
+/* =========================
+REDIS
+========================= */
+
 let redis = null
 
 if (REDIS_URL) {
 
-redis = new Redis(REDIS_URL,{ maxRetriesPerRequest:null })
+redis = new Redis(REDIS_URL,{maxRetriesPerRequest:null})
 
 redis.on("connect",()=>{
 console.log("Redis connected")
@@ -21,7 +25,7 @@ console.log("Redis connected")
 }
 
 /* =========================
-MODEL
+MODEL SELECTION
 ========================= */
 
 function chooseModel(type){
@@ -39,7 +43,7 @@ return "gemini-2.5-flash"
 }
 
 /* =========================
-WEAK HABIT
+WEAKEST HABIT
 ========================= */
 
 function weakestHabit(habits,completion){
@@ -84,13 +88,11 @@ AI GENERATION
 
 async function generateAI(data,type){
 
-const weak = weakestHabit(data.habits,data.habitCompletion)
-const strong = strongestHabit(data.habits,data.habitCompletion)
+const weak=weakestHabit(data.habits,data.habitCompletion)
+const strong=strongestHabit(data.habits,data.habitCompletion)
 
-const prompt = `
-You are an AI productivity coach.
-
-User stats:
+const prompt=`
+You are a productivity AI coach.
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
@@ -104,31 +106,29 @@ ${strong}
 Weak habit:
 ${weak}
 
-Analyze the productivity.
-
 Return ONLY JSON:
 
 {
  "messages":[
-  "message",
   "message"
  ]
 }
 
 Rules:
 
+generate 40 different messages
+each message unique
 short messages
 include <user>
 give advice
-mention weak habit if relevant
-mention strong habit if relevant
+mention weak habit when relevant
+mention strong habit when relevant
 use emojis
-generate 20 messages
 `
 
-const model = chooseModel(type)
+const model=chooseModel(type)
 
-const response = await fetch(
+const response=await fetch(
 `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
@@ -147,26 +147,29 @@ parts:[
 }
 )
 
-const raw = await response.json()
+const raw=await response.json()
 
 console.log("GEMINI RAW:",JSON.stringify(raw))
 
 try{
 
-const text =
-raw.candidates[0]
-.content.parts[0]
-.text
+let text=
+raw.candidates?.[0]?.content?.parts?.[0]?.text || ""
 
-const parsed = JSON.parse(text)
+let clean=text
+.replace(/```json/g,"")
+.replace(/```/g,"")
+.trim()
+
+const parsed=JSON.parse(clean)
 
 return parsed.messages
 
 }catch(e){
 
-console.log("Parse error")
+console.log("Parse error:",e)
 
-return [
+return[
 "<user>, consistency today builds tomorrow’s success 🚀",
 "<user>, focus on improving your weakest habit 💪",
 "<user>, small daily progress leads to big results 📈",
@@ -178,11 +181,17 @@ return [
 }
 
 /* =========================
-CACHE
+CACHE KEY
 ========================= */
 
 function cacheKey(data,type){
-return type+":"+JSON.stringify(data)
+
+return type+":"+JSON.stringify({
+habitScore:data.habitScore,
+taskScore:data.taskScore,
+habits:data.habits
+})
+
 }
 
 /* =========================
@@ -191,10 +200,10 @@ AI ROUTE
 
 app.post("/ai-coach",async(req,res)=>{
 
-console.log("REQUEST:",req.body)
-
 const data=req.body
 const type=data.type || "daily"
+
+console.log("REQUEST:",data)
 
 const key=cacheKey(data,type)
 
@@ -202,43 +211,34 @@ try{
 
 if(redis){
 
-const cached = await redis.get(key)
+let cached=await redis.get(key)
 
 if(cached){
 
-let list = JSON.parse(cached)
+let list=JSON.parse(cached)
 
-/* RANDOM REFRESH */
+console.log("POOL SIZE:",list.length)
 
-if(Math.random() < 0.1){
+/* REFRESH POOL 5% */
 
-console.log("Refreshing AI pool")
+if(Math.random()<0.05){
 
-const newMessages =
+console.log("Refreshing pool")
+
+const newMessages=
 await generateAI(data,type)
 
-list = [...list,...newMessages]
+list=[...list,...newMessages]
 
-/* LIMIT SIZE */
+/* LIMIT */
 
-list = list.slice(-100)
+list=list.slice(-100)
 
 await redis.set(key,JSON.stringify(list))
 
 }
 
 /* RANDOM MESSAGE */
-
-const message =
-list[Math.floor(Math.random()*list.length)]
-
-return res.json({message})
-
-}
-
-if(cached){
-
-const list=JSON.parse(cached)
 
 const message=
 list[Math.floor(Math.random()*list.length)]
@@ -249,7 +249,10 @@ return res.json({message})
 
 }
 
-const messages=await generateAI(data,type)
+/* GENERATE FIRST TIME */
+
+const messages=
+await generateAI(data,type)
 
 if(redis){
 await redis.set(key,JSON.stringify(messages))
@@ -272,9 +275,17 @@ message:"<user>, stay consistent and keep improving 🚀"
 
 })
 
+/* =========================
+ROOT
+========================= */
+
 app.get("/",(req,res)=>{
 res.send("BetterLife AI API running 🚀")
 })
+
+/* =========================
+START
+========================= */
 
 const PORT=process.env.PORT || 8080
 
