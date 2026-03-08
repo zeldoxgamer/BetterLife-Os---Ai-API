@@ -55,9 +55,9 @@ return [
 
 "<user>, consistency today builds the life you want 🚀",
 
-"<user>, small habits repeated daily create big results 💪",
+"<user>, small habits repeated daily create powerful results 💪",
 
-"<user>, focus on improving just 1% today 📈",
+"<user>, improve just 1% today and success will follow 📈",
 
 "<user>, discipline today creates freedom tomorrow 🔥"
 
@@ -65,7 +65,7 @@ return [
 
 }
 
-/* WEAKEST HABIT */
+/* FIND WEAKEST HABIT */
 
 function findWeakestHabit(habits,completion){
 
@@ -77,10 +77,8 @@ let weakest = habits[0]
 for(let i=0;i<habits.length;i++){
 
 if(completion[i] < min){
-
 min = completion[i]
 weakest = habits[i]
-
 }
 
 }
@@ -94,24 +92,20 @@ return weakest
 function chooseModel(type){
 
 if(type === "monthly"){
-
 return "gemini-2.5-pro"
-
 }
 
-/* 90% flash 10% pro */
+/* 90% flash */
 
 if(Math.random() < 0.1){
-
 return "gemini-2.5-pro"
-
 }
 
 return "gemini-2.5-flash"
 
 }
 
-/* GENERATE RESPONSES */
+/* GENERATE AI RESPONSES */
 
 async function generateResponses(data,type){
 
@@ -123,18 +117,24 @@ const weakestHabit =
 findWeakestHabit(data.habits,data.habitCompletion)
 
 prompt = `
-You are a productivity life coach.
+You are a smart productivity life coach.
+
+User habits:
+${data.habits}
 
 Weak habit:
 ${weakestHabit}
 
-Generate ${VARIATIONS} short motivational messages.
+Generate ${VARIATIONS} short coaching messages.
 
 Rules:
 2 lines max
-natural tone
-use emojis
+motivational
+practical advice
+sometimes include a short quote
 include <user>
+use emojis
+each message on new line
 `
 
 }
@@ -142,7 +142,7 @@ include <user>
 if(type === "monthly"){
 
 prompt = `
-You are a productivity analyst.
+You are an AI productivity analyst.
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
@@ -150,13 +150,14 @@ Task score: ${data.taskScore}
 Habits:
 ${data.habits}
 
-Generate ${VARIATIONS} insights.
+Generate ${VARIATIONS} monthly insights.
 
 Rules:
 short analysis
 motivational
 include <user>
 use emojis
+each message on new line
 `
 
 }
@@ -187,25 +188,23 @@ const result = await aiResponse.json()
 let text =
 result?.candidates?.[0]?.content?.parts?.[0]?.text
 
-if(!text){
+console.log("AI RAW:",text)
 
-return fallbackMessages()
-
-}
+if(text){
 
 let responses =
 text
 .split("\n")
 .map(t=>t.trim())
-.filter(t=>t.length > 10)
+.filter(t=>t.length > 8)
 
-if(responses.length === 0){
-
-responses = fallbackMessages()
+if(responses.length > 0){
+return responses
+}
 
 }
 
-return responses
+return fallbackMessages()
 
 }catch(e){
 
@@ -217,7 +216,7 @@ return fallbackMessages()
 
 }
 
-/* MAIN AI ROUTE */
+/* AI ROUTE */
 
 app.post("/ai-coach", async (req,res)=>{
 
@@ -239,7 +238,7 @@ let responses = JSON.parse(cached)
 
 const message =
 randomItem(responses) ||
-"<user>, stay consistent and keep improving 🚀"
+"<user>, keep improving step by step 🚀"
 
 /* DATASET EXPANSION */
 
@@ -291,7 +290,5 @@ message:
 const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
-
 console.log("BetterLife AI API running on port",PORT)
-
 })
