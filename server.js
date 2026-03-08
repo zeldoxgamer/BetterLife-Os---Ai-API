@@ -6,134 +6,139 @@ const app = express()
 
 app.use(express.json())
 
-const redis = new Redis(process.env.REDIS_URL,{
-maxRetriesPerRequest:null,
-enableReadyCheck:false
-})
+/* REDIS */
 
-app.get("/",(req,res)=>{
-res.send("BetterLife AI API running 🚀")
-})
+const redis = new Redis(process.env.REDIS_URL)
 
-app.post("/ai-coach",async(req,res)=>{
+/* GEMINI */
 
-try{
-
-const {
-habitScore=0,
-taskScore=0,
-tasksCompleted=0,
-bestDay="",
-habits=[],
-habitProgress=[],
-bestHabit="",
-worstHabit=""
-}=req.body
-
-/* TIME */
-
-const hour=new Date().getHours()
-
-let timeOfDay="day"
-
-if(hour<12){
-timeOfDay="morning"
-}
-else if(hour<18){
-timeOfDay="afternoon"
-}
-else{
-timeOfDay="night"
-}
+const GEMINI_KEY = process.env.GEMINI_API_KEY
 
 /* RANDOM */
 
-const random=Math.floor(Math.random()*5)+1
+function randomItem(arr){
+return arr[Math.floor(Math.random()*arr.length)]
+}
 
-const key=`coach:${habitScore}:${taskScore}:${timeOfDay}:${random}`
+/* ROUTE */
 
-const cached=await redis.get(key)
+app.post("/ai-coach", async (req,res)=>{
+
+try{
+
+const {habit,trend,habitScore,taskScore} = req.body
+
+/* REDIS KEY */
+
+const key = `habit:${habit}:trend:${trend}`
+
+/* CHECK REDIS */
+
+let cached = await redis.get(key)
 
 if(cached){
 
-await redis.incr(`${key}:count`)
+const responses = JSON.parse(cached)
 
-return res.json({
-message:cached,
-source:"cache"
-})
+const message = randomItem(responses)
+
+return res.json({message})
 
 }
 
 /* PROMPT */
 
-const prompt=`
-You are an AI productivity coach.
+const prompt = `
 
-Time: ${timeOfDay}
+You are a motivational productivity coach.
 
+Always address the user as <user>.
+
+Habit: ${habit}
+Trend: ${trend}
 Habit score: ${habitScore}
 Task score: ${taskScore}
 
-Best habit: ${bestHabit}
-Weak habit: ${worstHabit}
+Give:
+short analysis
+one practical advice
+one motivational idea
+sometimes a short quote
 
 Rules:
+2 or 3 lines
+friendly tone
+use emojis
+natural language
+never repeat the habit name literally
 
-- 2 or 3 short lines only
-- Use emojis
-- No markdown
 `
 
-/* GEMINI */
+/* GEMINI CALL */
 
-const response=await fetch(
-`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key=${process.env.GEMINI_KEY}`,
+const response = await fetch(
+`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
 headers:{
 "Content-Type":"application/json"
 },
 body:JSON.stringify({
-contents:[{
-parts:[{text:prompt}]
-}]
+contents:[
+{
+parts:[
+{text:prompt}
+]
+}
+]
 })
 }
 )
 
-const data=await response.json()
+const data = await response.json()
 
-let message=data.candidates[0].content.parts[0].text
+let message = data?.candidates?.[0]?.content?.parts?.[0]?.text
 
-message=message
-.replace(/\*\*/g,"")
-.replace(/\*/g,"")
-.trim()
+if(!message){
+message = "Stay consistent. Small habits create big results. 🚀"
+}
 
-/* SAVE */
+/* GENERATE VARIATIONS */
 
-await redis.set(key,message)
+const responses = []
 
-await redis.set(`${key}:count`,1)
+for(let i=0;i<10;i++){
 
-res.json({
-message,
-source:"ai"
-})
+responses.push(message)
 
-}catch(err){
+}
+
+/* SAVE REDIS */
+
+await redis.set(key, JSON.stringify(responses))
+
+/* RETURN */
+
+res.json({message})
+
+}
+
+catch(err){
 
 console.log(err)
 
-res.status(500).json({
-error:err.message
+res.json({
+message:"Keep building strong habits every day. 🚀"
 })
 
 }
 
 })
 
-app.listen(8080,"0.0.0.0",()=>{
-console.log("Server running 🚀")
+/* SERVER */
+
+const PORT = process.env.PORT || 8080
+
+app.listen(PORT,()=>{
+console.log("AI Coach running on",PORT)
 })
