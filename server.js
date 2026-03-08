@@ -12,6 +12,8 @@ app.use(express.json())
 app.use(helmet())
 app.use(morgan("dev"))
 
+/* RATE LIMIT */
+
 const limiter = rateLimit({
 windowMs:60000,
 max:120
@@ -45,7 +47,25 @@ function randomItem(arr){
 return _.sample(arr)
 }
 
-/* FIND WEAKEST HABIT */
+/* FALLBACK */
+
+function fallbackMessages(){
+
+return [
+
+"<user>, consistency today builds the life you want 🚀",
+
+"<user>, small habits repeated daily create big results 💪",
+
+"<user>, focus on improving just 1% today 📈",
+
+"<user>, discipline today creates freedom tomorrow 🔥"
+
+]
+
+}
+
+/* WEAKEST HABIT */
 
 function findWeakestHabit(habits,completion){
 
@@ -57,8 +77,10 @@ let weakest = habits[0]
 for(let i=0;i<habits.length;i++){
 
 if(completion[i] < min){
+
 min = completion[i]
 weakest = habits[i]
+
 }
 
 }
@@ -67,55 +89,57 @@ return weakest
 
 }
 
-/* FALLBACK */
+/* MODEL MIX */
 
-function fallbackMessages(){
+function chooseModel(type){
 
-return [
+if(type === "monthly"){
 
-"<user>, small daily habits build powerful results 🚀",
-
-"<user>, consistency beats motivation every time 💪",
-
-"<user>, progress comes from repeating small actions 📈",
-
-"<user>, discipline today creates freedom tomorrow 🔥"
-
-]
+return "gemini-2.5-pro"
 
 }
 
-/* GENERATE AI */
+/* 90% flash 10% pro */
+
+if(Math.random() < 0.1){
+
+return "gemini-2.5-pro"
+
+}
+
+return "gemini-2.5-flash"
+
+}
+
+/* GENERATE RESPONSES */
 
 async function generateResponses(data,type){
 
 let prompt
 
-if(type==="daily"){
+if(type === "daily"){
 
 const weakestHabit =
 findWeakestHabit(data.habits,data.habitCompletion)
 
 prompt = `
-You are a productivity coach.
+You are a productivity life coach.
 
-Weak habit: ${weakestHabit}
+Weak habit:
+${weakestHabit}
 
-Generate ${VARIATIONS} short coaching messages.
+Generate ${VARIATIONS} short motivational messages.
 
 Rules:
-- 2 lines max
-- motivational
-- natural tone
-- use emojis
-- include <user>
-
-Return each message on a new line.
+2 lines max
+natural tone
+use emojis
+include <user>
 `
 
 }
 
-if(type==="monthly"){
+if(type === "monthly"){
 
 prompt = `
 You are a productivity analyst.
@@ -123,26 +147,26 @@ You are a productivity analyst.
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
 
-User habits:
+Habits:
 ${data.habits}
 
-Generate ${VARIATIONS} monthly insights.
+Generate ${VARIATIONS} insights.
 
 Rules:
-- short insight
-- motivational
-- use emojis
-- include <user>
-
-Return each message on a new line.
+short analysis
+motivational
+include <user>
+use emojis
 `
 
 }
 
 try{
 
+const model = chooseModel(type)
+
 const aiResponse = await fetch(
-`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+`https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
 headers:{
@@ -173,10 +197,12 @@ let responses =
 text
 .split("\n")
 .map(t=>t.trim())
-.filter(t=>t.length>10)
+.filter(t=>t.length > 10)
 
-if(responses.length===0){
+if(responses.length === 0){
+
 responses = fallbackMessages()
+
 }
 
 return responses
@@ -191,7 +217,7 @@ return fallbackMessages()
 
 }
 
-/* AI ROUTE */
+/* MAIN AI ROUTE */
 
 app.post("/ai-coach", async (req,res)=>{
 
@@ -213,7 +239,9 @@ let responses = JSON.parse(cached)
 
 const message =
 randomItem(responses) ||
-"<user>, keep improving step by step 🚀"
+"<user>, stay consistent and keep improving 🚀"
+
+/* DATASET EXPANSION */
 
 if(Math.random() < EXPANSION_RATE){
 
@@ -239,7 +267,7 @@ await redis.set(key,JSON.stringify(responses))
 
 const message =
 randomItem(responses) ||
-"<user>, keep improving step by step 🚀"
+"<user>, stay consistent and keep improving 🚀"
 
 res.json({message})
 
@@ -248,7 +276,10 @@ res.json({message})
 console.log("SERVER ERROR:",err)
 
 res.json({
-message:"<user>, stay consistent. Small habits build powerful results 🚀"
+
+message:
+"<user>, small habits today build powerful results 🚀"
+
 })
 
 }
@@ -260,5 +291,7 @@ message:"<user>, stay consistent. Small habits build powerful results 🚀"
 const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
+
 console.log("BetterLife AI API running on port",PORT)
+
 })
