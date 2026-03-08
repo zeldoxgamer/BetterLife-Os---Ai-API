@@ -32,8 +32,6 @@ redis.on("error",(err)=>console.log("Redis error",err))
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 
-/* CONFIG */
-
 const VARIATIONS = 20
 const EXPANSION_RATE = 0.15
 
@@ -63,7 +61,7 @@ return weakest
 
 }
 
-/* GENERATE AI */
+/* AI GENERATION */
 
 async function generateResponses(data,type){
 
@@ -75,26 +73,20 @@ const weakestHabit =
 findWeakestHabit(data.habits,data.habitCompletion)
 
 prompt = `
+You are a productivity coach.
 
-Role: AI productivity coach
+Weak habit: ${weakestHabit}
 
-HabitScore:${data.habitScore}
-TaskScore:${data.taskScore}
-
-Weak habit detected:
-${weakestHabit}
-
-Generate ${VARIATIONS} short coaching messages.
+Generate ${VARIATIONS} different short coaching messages.
 
 Rules:
-2 lines max
-motivational
-natural tone
-use emojis
-include <user>
+- 2 lines max
+- motivational
+- natural tone
+- use emojis
+- include <user>
 
-Return JSON array only
-
+Return each message on a new line.
 `
 
 }
@@ -102,32 +94,26 @@ Return JSON array only
 if(type==="monthly"){
 
 prompt = `
+You are a productivity analyst.
 
-Role: AI productivity analyst
-
-HabitScore:${data.habitScore}
-TaskScore:${data.taskScore}
+Habit score: ${data.habitScore}
+Task score: ${data.taskScore}
 
 User habits:
 ${data.habits}
 
-Analyze monthly productivity.
-
-Generate ${VARIATIONS} insights.
+Generate ${VARIATIONS} monthly insights.
 
 Rules:
-short insight
-coaching advice
-include <user>
-use emojis
+- short insight
+- motivational
+- use emojis
+- include <user>
 
-Return JSON array only
-
+Return each message on a new line.
 `
 
 }
-
-/* GEMINI REQUEST */
 
 try{
 
@@ -150,14 +136,35 @@ parts:[{text:prompt}]
 
 const result = await aiResponse.json()
 
-let text = result?.candidates?.[0]?.content?.parts?.[0]?.text
+let text =
+result?.candidates?.[0]?.content?.parts?.[0]?.text
 
-let responses
+if(!text){
 
-try{
-responses = JSON.parse(text)
-}catch{
-responses = [text]
+return [
+"<user>, small habits build powerful results 🚀",
+"<user>, consistency beats motivation 💪",
+"<user>, progress comes from repeating small actions 📈"
+]
+
+}
+
+/* PARSE */
+
+let responses =
+text
+.split("\n")
+.map(t=>t.trim())
+.filter(t=>t.length>10)
+
+if(responses.length===0){
+
+responses = [
+"<user>, small habits build powerful results 🚀",
+"<user>, consistency beats motivation 💪",
+"<user>, progress comes from repeating small actions 📈"
+]
+
 }
 
 return responses
@@ -167,9 +174,9 @@ return responses
 console.log("Gemini error",e)
 
 return [
-"<user>, small daily habits can transform your life 🚀",
-"<user>, consistency beats intensity every time 💪",
-"<user>, keep moving forward one habit at a time 📈"
+"<user>, stay consistent and trust the process 🚀",
+"<user>, every small action today builds your future 💪",
+"<user>, progress is made through discipline 📈"
 ]
 
 }
