@@ -1,10 +1,25 @@
 import express from "express"
 import Redis from "ioredis"
 import fetch from "node-fetch"
+import helmet from "helmet"
+import morgan from "morgan"
+import rateLimit from "express-rate-limit"
+import _ from "lodash"
 
 const app = express()
 
 app.use(express.json())
+app.use(helmet())
+app.use(morgan("dev"))
+
+/* RATE LIMIT */
+
+const limiter = rateLimit({
+windowMs: 60000,
+max: 120
+})
+
+app.use(limiter)
 
 /* REDIS */
 
@@ -14,69 +29,113 @@ const redis = new Redis(process.env.REDIS_URL)
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 
+/* CONFIG */
+
+const VARIATIONS = 20
+const EXPANSION_RATE = 0.15
+
 /* RANDOM */
 
 function randomItem(arr){
-return arr[Math.floor(Math.random()*arr.length)]
+return _.sample(arr)
 }
 
-/* ROUTE */
+/* FIND WEAKEST HABIT */
 
-app.post("/ai-coach", async (req,res)=>{
+function findWeakestHabit(habits,completion){
 
-try{
+let min = 1
+let weakest = habits[0]
 
-const {habit,trend,habitScore,taskScore} = req.body
+for(let i=0;i<habits.length;i++){
 
-/* REDIS KEY */
+if(completion[i] < min){
 
-const key = `habit:${habit}:trend:${trend}`
-
-/* CHECK REDIS */
-
-let cached = await redis.get(key)
-
-if(cached){
-
-const responses = JSON.parse(cached)
-
-const message = randomItem(responses)
-
-return res.json({message})
+min = completion[i]
+weakest = habits[i]
 
 }
 
-/* PROMPT */
+}
 
-const prompt = `
+return weakest
 
-You are a motivational productivity coach.
+}
 
-Always address the user as <user>.
+/* AI GENERATION */
 
-Habit: ${habit}
-Trend: ${trend}
-Habit score: ${habitScore}
-Task score: ${taskScore}
+async function generateResponses(data,type){
 
-Give:
-short analysis
-one practical advice
-one motivational idea
-sometimes a short quote
+let prompt
+
+/* DAILY */
+
+if(type==="daily"){
+
+const weakestHabit =
+findWeakestHabit(data.habits,data.habitCompletion)
+
+prompt = `
+
+Role: AI productivity coach
+
+HabitScore: ${data.habitScore}
+TaskScore: ${data.taskScore}
+
+Weak habit detected:
+${weakestHabit}
+
+Generate ${VARIATIONS} coaching messages.
 
 Rules:
-2 or 3 lines
-friendly tone
-use emojis
-natural language
-never repeat the habit name literally
+- natural tone
+- 2 lines max
+- motivational
+- include <user>
+- use emojis
+- avoid repeating structure
+
+Return JSON array only.
 
 `
 
+}
+
+/* MONTHLY */
+
+if(type==="monthly"){
+
+prompt = `
+
+Role: AI productivity analyst
+
+HabitScore: ${data.habitScore}
+TaskScore: ${data.taskScore}
+
+User habits:
+${data.habits}
+
+Analyze the monthly performance.
+
+Detect possible weak habits.
+
+Generate ${VARIATIONS} monthly insights.
+
+Rules:
+- short insight
+- coaching advice
+- include <user>
+- use emojis
+
+Return JSON array only.
+
+`
+
+}
+
 /* GEMINI CALL */
 
-const response = await fetch(
+const aiResponse = await fetch(
 `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
@@ -95,29 +154,67 @@ parts:[
 }
 )
 
-const data = await response.json()
+const result = await aiResponse.json()
 
-let message = data?.candidates?.[0]?.content?.parts?.[0]?.text
+let text = result?.candidates?.[0]?.content?.parts?.[0]?.text
 
-if(!message){
-message = "Stay consistent. Small habits create big results. 🚀"
+let responses
+
+try{
+responses = JSON.parse(text)
+}catch{
+responses = [text]
 }
 
-/* GENERATE VARIATIONS */
-
-const responses = []
-
-for(let i=0;i<10;i++){
-
-responses.push(message)
+return responses
 
 }
 
-/* SAVE REDIS */
+/* ROUTE */
+
+app.post("/ai-coach", async (req,res)=>{
+
+try{
+
+const {type,habit,trend} = req.body
+
+const key = `ai:${type}:${habit}:${trend}`
+
+let cached = await redis.get(key)
+
+/* CACHE HIT */
+
+if(cached){
+
+let responses = JSON.parse(cached)
+
+const message = randomItem(responses)
+
+/* DATASET EXPANSION */
+
+if(Math.random() < EXPANSION_RATE){
+
+const newResponses =
+await generateResponses(req.body,type)
+
+responses = _.uniq([...responses,...newResponses])
 
 await redis.set(key, JSON.stringify(responses))
 
-/* RETURN */
+}
+
+return res.json({message})
+
+}
+
+/* FIRST GENERATION */
+
+const responses =
+await generateResponses(req.body,type)
+
+await redis.set(key, JSON.stringify(responses))
+
+const message = randomItem(responses)
 
 res.json({message})
 
@@ -128,7 +225,7 @@ catch(err){
 console.log(err)
 
 res.json({
-message:"Keep building strong habits every day. 🚀"
+message:"<user>, stay consistent. Small habits create powerful results 🚀"
 })
 
 }
@@ -140,5 +237,5 @@ message:"Keep building strong habits every day. 🚀"
 const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
-console.log("AI Coach running on",PORT)
+console.log("BetterLife AI API running on",PORT)
 })
