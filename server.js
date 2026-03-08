@@ -91,20 +91,24 @@ async function generateAI(data,type){
 const weak=weakestHabit(data.habits,data.habitCompletion)
 const strong=strongestHabit(data.habits,data.habitCompletion)
 
-const prompt=`
-You are a productivity AI coach.
+const prompt = `
+You are an AI productivity coach.
+
+User statistics:
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
+Tasks completed: ${data.tasksCompleted}
+
+Best day this week: ${data.bestDay}
 
 Habits:
 ${data.habits}
 
-Strong habit:
-${strong}
+Habit completion rates:
+${data.habitCompletion}
 
-Weak habit:
-${weak}
+Analyze the productivity.
 
 Return ONLY JSON:
 
@@ -116,13 +120,14 @@ Return ONLY JSON:
 
 Rules:
 
-generate 40 different messages
+generate 40 different coaching messages
 each message unique
 short messages
 include <user>
-give advice
+give practical advice
 mention weak habit when relevant
 mention strong habit when relevant
+mention best day if relevant
 use emojis
 `
 
