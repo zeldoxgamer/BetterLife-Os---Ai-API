@@ -118,7 +118,9 @@ const weak = weakestHabit(data.habits,data.habitCompletion)
 const strong = strongestHabit(data.habits,data.habitCompletion)
 
 const prompt = `
-You are a productivity AI coach.
+You are a friendly productivity AI coach.
+
+User statistics:
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
@@ -145,15 +147,33 @@ Return ONLY JSON:
 
 Rules:
 
-generate 40 different coaching messages
-each message unique
-short messages
-include <user>
-give practical advice
-mention weak habit when relevant
-mention strong habit when relevant
-mention best day if relevant
-use emojis
+Generate 40 different messages.
+
+Each message must feel natural and different.
+
+Sometimes give motivation.
+Sometimes give a quote.
+Sometimes analyze productivity.
+Sometimes mention the weak habit.
+Sometimes encourage the strong habit.
+
+Do NOT always talk about scores.
+
+Examples of topics:
+
+• improving weak habits  
+• celebrating strong habits  
+• discipline and consistency  
+• motivation and mindset  
+• productivity advice  
+• short inspiring quotes  
+
+Messages must:
+
+- include <user>
+- be short (1-2 sentences)
+- feel human and friendly
+- include emojis
 `
 
 const model = chooseModel(type)
