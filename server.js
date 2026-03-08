@@ -12,12 +12,20 @@ app.use(express.json())
 app.use(helmet())
 app.use(morgan("dev"))
 
+/* RATE LIMIT */
+
 const limiter = rateLimit({
 windowMs:60000,
 max:120
 })
 
 app.use(limiter)
+
+/* ROOT ROUTE */
+
+app.get("/",(req,res)=>{
+res.send("BetterLife AI API running 🚀")
+})
 
 /* REDIS */
 
@@ -61,7 +69,7 @@ return weakest
 
 }
 
-/* AI GENERATION */
+/* GENERATE AI */
 
 async function generateResponses(data,type){
 
@@ -77,7 +85,7 @@ You are a productivity coach.
 
 Weak habit: ${weakestHabit}
 
-Generate ${VARIATIONS} different short coaching messages.
+Generate ${VARIATIONS} short coaching messages.
 
 Rules:
 - 2 lines max
@@ -141,15 +149,9 @@ result?.candidates?.[0]?.content?.parts?.[0]?.text
 
 if(!text){
 
-return [
-"<user>, small habits build powerful results 🚀",
-"<user>, consistency beats motivation 💪",
-"<user>, progress comes from repeating small actions 📈"
-]
+return fallbackMessages()
 
 }
-
-/* PARSE */
 
 let responses =
 text
@@ -158,36 +160,44 @@ text
 .filter(t=>t.length>10)
 
 if(responses.length===0){
-
-responses = [
-"<user>, small habits build powerful results 🚀",
-"<user>, consistency beats motivation 💪",
-"<user>, progress comes from repeating small actions 📈"
-]
-
+responses = fallbackMessages()
 }
 
 return responses
 
 }catch(e){
 
-console.log("Gemini error",e)
+console.log("Gemini error:",e)
+
+return fallbackMessages()
+
+}
+
+}
+
+function fallbackMessages(){
 
 return [
-"<user>, stay consistent and trust the process 🚀",
-"<user>, every small action today builds your future 💪",
-"<user>, progress is made through discipline 📈"
+
+"<user>, small daily habits build powerful results 🚀",
+
+"<user>, consistency beats motivation every time 💪",
+
+"<user>, progress comes from repeating small actions 📈",
+
+"<user>, keep showing up daily and success will follow 🔥"
+
 ]
 
 }
 
-}
-
-/* ROUTE */
+/* AI ROUTE */
 
 app.post("/ai-coach", async (req,res)=>{
 
 try{
+
+console.log("REQUEST BODY:",req.body)
 
 const {type,habit,trend} = req.body
 
@@ -195,13 +205,15 @@ const key = `ai:${type}:${habit}:${trend}`
 
 let cached = await redis.get(key)
 
+/* CACHE HIT */
+
 if(cached){
 
 let responses = JSON.parse(cached)
 
 const message = randomItem(responses)
 
-/* EXPANSION */
+/* DATASET EXPANSION */
 
 if(Math.random() < EXPANSION_RATE){
 
@@ -231,7 +243,7 @@ res.json({message})
 
 }catch(err){
 
-console.log(err)
+console.log("SERVER ERROR:",err)
 
 res.json({
 message:"<user>, stay consistent. Small habits build powerful results 🚀"
@@ -241,10 +253,10 @@ message:"<user>, stay consistent. Small habits build powerful results 🚀"
 
 })
 
-/* SERVER */
+/* START SERVER */
 
 const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
-console.log("BetterLife AI API running on",PORT)
+console.log("BetterLife AI API running on port",PORT)
 })
