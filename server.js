@@ -186,11 +186,13 @@ CACHE KEY
 
 function cacheKey(data,type){
 
-return "v2:" + type+ ":" + JSON.stringify({
-habitScore:data.habitScore,
-taskScore:data.taskScore,
-habits:data.habits
-})
+const habitsKey = data.habits.join("-")
+
+const scoreKey =
+"hs"+Math.round(data.habitScore) +
+"_ts"+Math.round(data.taskScore)
+
+return "ai:"+type+":"+habitsKey+":"+scoreKey
 
 }
 
