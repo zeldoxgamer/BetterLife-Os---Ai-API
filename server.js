@@ -5,99 +5,111 @@ import Redis from "ioredis"
 const app = express()
 app.use(express.json())
 
-/* =========================
-ENV
-========================= */
-
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const REDIS_URL = process.env.REDIS_URL
-
-/* =========================
-REDIS
-========================= */
 
 let redis = null
 
 if (REDIS_URL) {
 
-  redis = new Redis(REDIS_URL, {
-    maxRetriesPerRequest: null
-  })
+redis = new Redis(REDIS_URL,{ maxRetriesPerRequest:null })
 
-  redis.on("connect", () => {
-    console.log("Redis connected")
-  })
+redis.on("connect",()=>{
+console.log("Redis connected")
+})
 
 }
 
 /* =========================
-MODEL SELECTION
+MODEL
 ========================= */
 
-function chooseModel(type) {
+function chooseModel(type){
 
-  if (type === "monthly") {
-    return "gemini-2.5-flash"
-  }
+if(type==="monthly"){
+return "gemini-2.5-flash"
+}
 
-  if (Math.random() < 0.7) {
-    return "gemini-2.5-flash-lite"
-  }
+if(Math.random()<0.7){
+return "gemini-2.5-flash-lite"
+}
 
-  return "gemini-2.5-flash"
+return "gemini-2.5-flash"
 
 }
 
 /* =========================
-WEAKEST HABIT
+WEAK HABIT
 ========================= */
 
-function weakestHabit(habits, completion) {
+function weakestHabit(habits,completion){
 
-  if (!habits || !completion) return ""
+let min=1
+let index=0
 
-  let min = 1
-  let index = 0
+completion.forEach((v,i)=>{
+if(v<min){
+min=v
+index=i
+}
+})
 
-  completion.forEach((v, i) => {
-    if (v < min) {
-      min = v
-      index = i
-    }
-  })
-
-  return habits[index] || ""
+return habits[index] || ""
 
 }
 
 /* =========================
-GENERATE AI
+STRONG HABIT
 ========================= */
 
-async function generateAI(data, type) {
+function strongestHabit(habits,completion){
 
-  const weak = weakestHabit(data.habits, data.habitCompletion)
+let max=0
+let index=0
 
-  const prompt = `
-You are a productivity AI coach.
+completion.forEach((v,i)=>{
+if(v>max){
+max=v
+index=i
+}
+})
 
-User data:
-habit score: ${data.habitScore}
-task score: ${data.taskScore}
+return habits[index] || ""
 
-habits:
+}
+
+/* =========================
+AI GENERATION
+========================= */
+
+async function generateAI(data,type){
+
+const weak = weakestHabit(data.habits,data.habitCompletion)
+const strong = strongestHabit(data.habits,data.habitCompletion)
+
+const prompt = `
+You are an AI productivity coach.
+
+User stats:
+
+Habit score: ${data.habitScore}
+Task score: ${data.taskScore}
+
+Habits:
 ${data.habits}
 
-weak habit:
+Strong habit:
+${strong}
+
+Weak habit:
 ${weak}
 
-Return ONLY JSON.
+Analyze the productivity.
 
-Format:
+Return ONLY JSON:
 
 {
  "messages":[
-  "message",
   "message",
   "message"
  ]
@@ -106,152 +118,134 @@ Format:
 Rules:
 
 short messages
-max 2 lines
 include <user>
+give advice
+mention weak habit if relevant
+mention strong habit if relevant
 use emojis
-sometimes include motivation or quote
 generate 20 messages
 `
 
-  const model = chooseModel(type)
+const model = chooseModel(type)
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt }
-            ]
-          }
-        ]
-      })
-    }
-  )
+const response = await fetch(
+`https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+contents:[
+{
+parts:[
+{ text:prompt }
+]
+}
+]
+})
+}
+)
 
-  const raw = await response.json()
+const raw = await response.json()
 
-  console.log("GEMINI RAW:", JSON.stringify(raw))
+console.log("GEMINI RAW:",JSON.stringify(raw))
 
-  try {
+try{
 
-    const text =
-      raw.candidates[0]
-        .content.parts[0]
-        .text
+const text =
+raw.candidates[0]
+.content.parts[0]
+.text
 
-    const parsed = JSON.parse(text)
+const parsed = JSON.parse(text)
 
-    return parsed.messages
+return parsed.messages
 
-  } catch (e) {
+}catch(e){
 
-    console.log("Parsing failed")
+console.log("Parse error")
 
-    return [
-      "<user>, small habits daily build big success 🚀",
-      "<user>, consistency today creates tomorrow’s results 💪",
-      "<user>, focus on improving one habit today 📈",
-      "<user>, progress comes from showing up every day 🔥"
-    ]
+return [
+"<user>, consistency today builds tomorrow’s success 🚀",
+"<user>, focus on improving your weakest habit 💪",
+"<user>, small daily progress leads to big results 📈",
+"<user>, discipline today creates freedom tomorrow 🔥"
+]
 
-  }
+}
 
 }
 
 /* =========================
-CACHE KEY
+CACHE
 ========================= */
 
-function cacheKey(data, type) {
-  return type + ":" + JSON.stringify(data)
+function cacheKey(data,type){
+return type+":"+JSON.stringify(data)
 }
 
 /* =========================
 AI ROUTE
 ========================= */
 
-app.post("/ai-coach", async (req, res) => {
+app.post("/ai-coach",async(req,res)=>{
 
-  console.log("REQUEST:", req.body)
+console.log("REQUEST:",req.body)
 
-  const data = req.body
-  const type = data.type || "daily"
+const data=req.body
+const type=data.type || "daily"
 
-  const key = cacheKey(data, type)
+const key=cacheKey(data,type)
 
-  try {
+try{
 
-    /* CACHE */
+if(redis){
 
-    if (redis) {
+const cached=await redis.get(key)
 
-      const cached = await redis.get(key)
+if(cached){
 
-      if (cached) {
+const list=JSON.parse(cached)
 
-        const list = JSON.parse(cached)
+const message=
+list[Math.floor(Math.random()*list.length)]
 
-        const message =
-          list[Math.floor(Math.random() * list.length)]
+return res.json({message})
 
-        return res.json({ message })
+}
 
-      }
+}
 
-    }
+const messages=await generateAI(data,type)
 
-    /* GENERATE */
+if(redis){
+await redis.set(key,JSON.stringify(messages))
+}
 
-    const messages = await generateAI(data, type)
+const message=
+messages[Math.floor(Math.random()*messages.length)]
 
-    /* SAVE CACHE */
+res.json({message})
 
-    if (redis) {
+}catch(e){
 
-      await redis.set(
-        key,
-        JSON.stringify(messages)
-      )
+console.log("Server error:",e)
 
-    }
+res.json({
+message:"<user>, stay consistent and keep improving 🚀"
+})
 
-    const message =
-      messages[Math.floor(Math.random() * messages.length)]
-
-    res.json({ message })
-
-  } catch (err) {
-
-    console.log("Server error:", err)
-
-    res.json({
-      message: "<user>, stay consistent and keep improving 🚀"
-    })
-
-  }
+}
 
 })
 
-/* =========================
-ROOT
-========================= */
-
-app.get("/", (req, res) => {
-  res.send("BetterLife AI API running 🚀")
+app.get("/",(req,res)=>{
+res.send("BetterLife AI API running 🚀")
 })
 
-/* =========================
-START SERVER
-========================= */
+const PORT=process.env.PORT || 8080
 
-const PORT = process.env.PORT || 8080
-
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT)
+app.listen(PORT,()=>{
+console.log("Server running on port",PORT)
 })
