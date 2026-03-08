@@ -104,7 +104,7 @@ const scoreKey =
 "hs"+Math.round(data.habitScore) +
 "_ts"+Math.round(data.taskScore)
 
-return "ai:v3:"+type+":"+habitsKey+":"+scoreKey
+return "ai:v4:"+type+":"+habitsKey+":"+scoreKey
 
 }
 
