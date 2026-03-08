@@ -83,6 +83,22 @@ return habits[index] || ""
 }
 
 /* =========================
+CACHE KEY (V3)
+========================= */
+
+function cacheKey(data,type){
+
+const habitsKey = data.habits.join("-")
+
+const scoreKey =
+"hs"+Math.round(data.habitScore) +
+"_ts"+Math.round(data.taskScore)
+
+return "ai:v3:"+type+":"+habitsKey+":"+scoreKey
+
+}
+
+/* =========================
 AI GENERATION
 ========================= */
 
@@ -91,24 +107,23 @@ async function generateAI(data,type){
 const weak=weakestHabit(data.habits,data.habitCompletion)
 const strong=strongestHabit(data.habits,data.habitCompletion)
 
-const prompt = `
-You are an AI productivity coach.
-
-User statistics:
+const prompt=`
+You are a productivity AI coach.
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
-Tasks completed: ${data.tasksCompleted}
 
-Best day this week: ${data.bestDay}
+Tasks completed: ${data.tasksCompleted}
+Best day: ${data.bestDay}
 
 Habits:
 ${data.habits}
 
-Habit completion rates:
-${data.habitCompletion}
+Strong habit:
+${strong}
 
-Analyze the productivity.
+Weak habit:
+${weak}
 
 Return ONLY JSON:
 
@@ -186,28 +201,23 @@ return[
 }
 
 /* =========================
-CACHE KEY
-========================= */
-
-function cacheKey(data,type){
-
-const habitsKey = data.habits.join("-")
-
-const scoreKey =
-"hs"+Math.round(data.habitScore) +
-"_ts"+Math.round(data.taskScore)
-
-return "ai:v3"+type+":"+habitsKey+":"+scoreKey
-
-}
-
-/* =========================
 AI ROUTE
 ========================= */
 
 app.post("/ai-coach",async(req,res)=>{
 
 const data=req.body
+
+/* FIX GOOGLE SHEETS PERCENT */
+
+if(data.habitScore <= 1){
+data.habitScore = Math.round(data.habitScore * 100)
+}
+
+if(data.taskScore <= 1){
+data.taskScore = Math.round(data.taskScore * 100)
+}
+
 const type=data.type || "daily"
 
 console.log("REQUEST:",data)
@@ -237,7 +247,7 @@ await generateAI(data,type)
 
 list=[...list,...newMessages]
 
-/* LIMIT */
+/* LIMIT SIZE */
 
 list=list.slice(-100)
 
@@ -291,7 +301,7 @@ res.send("BetterLife AI API running 🚀")
 })
 
 /* =========================
-START
+START SERVER
 ========================= */
 
 const PORT=process.env.PORT || 8080
