@@ -186,7 +186,7 @@ CACHE KEY
 
 function cacheKey(data,type){
 
-return type+":"+JSON.stringify({
+return "v2:" + type+ ":" + JSON.stringify({
 habitScore:data.habitScore,
 taskScore:data.taskScore,
 habits:data.habits
