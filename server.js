@@ -195,9 +195,10 @@ if(text){
 let responses =
 text
 .split("\n")
-.map(t=>t.trim())
-.filter(t=>t.length > 8)
+.map(t=>t.replace(/^[0-9\-\.\•]+\s*/,"").trim())
+.filter(t=>t.length > 10)
 
+  
 if(responses.length > 0){
 return responses
 }
