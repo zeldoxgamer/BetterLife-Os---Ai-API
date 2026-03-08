@@ -202,7 +202,39 @@ try{
 
 if(redis){
 
-const cached=await redis.get(key)
+const cached = await redis.get(key)
+
+if(cached){
+
+let list = JSON.parse(cached)
+
+/* RANDOM REFRESH */
+
+if(Math.random() < 0.1){
+
+console.log("Refreshing AI pool")
+
+const newMessages =
+await generateAI(data,type)
+
+list = [...list,...newMessages]
+
+/* LIMIT SIZE */
+
+list = list.slice(-100)
+
+await redis.set(key,JSON.stringify(list))
+
+}
+
+/* RANDOM MESSAGE */
+
+const message =
+list[Math.floor(Math.random()*list.length)]
+
+return res.json({message})
+
+}
 
 if(cached){
 
