@@ -43,42 +43,50 @@ return "gemini-2.5-flash"
 }
 
 /* =========================
+STRONGEST HABIT
+========================= */
+
+function strongestHabit(habits,completion){
+
+let max = 0
+let strong = ""
+
+habits.slice(0,10).forEach((h,i)=>{
+
+const c = completion[i] ?? 0
+
+if(c > max){
+max = c
+strong = h
+}
+
+})
+
+return strong
+
+}
+
+/* =========================
 WEAKEST HABIT
 ========================= */
 
 function weakestHabit(habits,completion){
 
-let min=1
-let index=0
+let min = 1
+let weak = ""
 
-completion.forEach((v,i)=>{
-if(v<min){
-min=v
-index=i
+habits.slice(0,10).forEach((h,i)=>{
+
+const c = completion[i] ?? 1
+
+if(c < min){
+min = c
+weak = h
 }
+
 })
 
-return habits[index] || ""
-
-}
-
-/* =========================
-STRONG HABIT
-========================= */
-
-function strongestHabit(habits,completion){
-
-let max=0
-let index=0
-
-completion.forEach((v,i)=>{
-if(v>max){
-max=v
-index=i
-}
-})
-
-return habits[index] || ""
+return weak
 
 }
 
@@ -88,7 +96,9 @@ CACHE KEY (V3)
 
 function cacheKey(data,type){
 
-const habitsKey = data.habits.join("-")
+const habitsKey = (data.habits || [])
+.slice(0,10)
+.join("-")
 
 const scoreKey =
 "hs"+Math.round(data.habitScore) +
@@ -104,10 +114,10 @@ AI GENERATION
 
 async function generateAI(data,type){
 
-const weak=weakestHabit(data.habits,data.habitCompletion)
-const strong=strongestHabit(data.habits,data.habitCompletion)
+const weak = weakestHabit(data.habits,data.habitCompletion)
+const strong = strongestHabit(data.habits,data.habitCompletion)
 
-const prompt=`
+const prompt = `
 You are a productivity AI coach.
 
 Habit score: ${data.habitScore}
@@ -116,8 +126,8 @@ Task score: ${data.taskScore}
 Tasks completed: ${data.tasksCompleted}
 Best day: ${data.bestDay}
 
-Habits:
-${data.habits}
+Habits (max 10):
+${data.habits.slice(0,10)}
 
 Strong habit:
 ${strong}
@@ -146,9 +156,9 @@ mention best day if relevant
 use emojis
 `
 
-const model=chooseModel(type)
+const model = chooseModel(type)
 
-const response=await fetch(
+const response = await fetch(
 `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
@@ -167,21 +177,21 @@ parts:[
 }
 )
 
-const raw=await response.json()
+const raw = await response.json()
 
 console.log("GEMINI RAW:",JSON.stringify(raw))
 
 try{
 
-let text=
+let text =
 raw.candidates?.[0]?.content?.parts?.[0]?.text || ""
 
-let clean=text
+let clean = text
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim()
 
-const parsed=JSON.parse(clean)
+const parsed = JSON.parse(clean)
 
 return parsed.messages
 
@@ -189,10 +199,10 @@ return parsed.messages
 
 console.log("Parse error:",e)
 
-return[
-"<user>, consistency today builds tomorrow’s success 🚀",
-"<user>, focus on improving your weakest habit 💪",
-"<user>, small daily progress leads to big results 📈",
+return [
+"<user>, stay consistent and keep improving 🚀",
+"<user>, focus on your weakest habit today 💪",
+"<user>, small progress every day builds success 📈",
 "<user>, discipline today creates freedom tomorrow 🔥"
 ]
 
@@ -206,9 +216,22 @@ AI ROUTE
 
 app.post("/ai-coach",async(req,res)=>{
 
-const data=req.body
+const data = req.body
 
-/* FIX GOOGLE SHEETS PERCENT */
+/* ===== FORCE HABIT LIMIT ===== */
+
+if(Array.isArray(data.habits)){
+data.habits = data.habits.slice(0,10)
+}
+
+if(Array.isArray(data.habitCompletion)){
+data.habitCompletion = data.habitCompletion.slice(0,10)
+}
+
+console.log("HABITS RECEIVED:",data.habits)
+console.log("HABIT COUNT:",data.habits.length)
+
+/* ===== FIX GOOGLE SHEETS PERCENT ===== */
 
 if(data.habitScore <= 1){
 data.habitScore = Math.round(data.habitScore * 100)
@@ -218,46 +241,41 @@ if(data.taskScore <= 1){
 data.taskScore = Math.round(data.taskScore * 100)
 }
 
-const type=data.type || "daily"
+const type = data.type || "daily"
 
 console.log("REQUEST:",data)
 
-const key=cacheKey(data,type)
+const key = cacheKey(data,type)
 
 try{
 
 if(redis){
 
-let cached=await redis.get(key)
+let cached = await redis.get(key)
 
 if(cached){
 
-let list=JSON.parse(cached)
+let list = JSON.parse(cached)
 
 console.log("POOL SIZE:",list.length)
 
-/* REFRESH POOL 5% */
+/* refresh pool sometimes */
 
-if(Math.random()<0.05){
+if(Math.random() < 0.05){
 
-console.log("Refreshing pool")
+const newMessages = await generateAI(data,type)
 
-const newMessages=
-await generateAI(data,type)
+list = [...list,...newMessages]
 
-list=[...list,...newMessages]
-
-/* LIMIT SIZE */
-
-list=list.slice(-100)
+list = list.slice(-100)
 
 await redis.set(key,JSON.stringify(list))
 
 }
 
-/* RANDOM MESSAGE */
+/* random message */
 
-const message=
+const message =
 list[Math.floor(Math.random()*list.length)]
 
 return res.json({message})
@@ -266,16 +284,15 @@ return res.json({message})
 
 }
 
-/* GENERATE FIRST TIME */
+/* first generation */
 
-const messages=
-await generateAI(data,type)
+const messages = await generateAI(data,type)
 
 if(redis){
 await redis.set(key,JSON.stringify(messages))
 }
 
-const message=
+const message =
 messages[Math.floor(Math.random()*messages.length)]
 
 res.json({message})
@@ -304,7 +321,7 @@ res.send("BetterLife AI API running 🚀")
 START SERVER
 ========================= */
 
-const PORT=process.env.PORT || 8080
+const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
 console.log("Server running on port",PORT)
