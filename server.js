@@ -1,115 +1,82 @@
 import express from "express"
-import Redis from "ioredis"
 import fetch from "node-fetch"
-import helmet from "helmet"
-import morgan from "morgan"
-import rateLimit from "express-rate-limit"
-import _ from "lodash"
+import Redis from "ioredis"
 
 const app = express()
-
 app.use(express.json())
-app.use(helmet())
-app.use(morgan("dev"))
 
-/* RATE LIMIT */
+/* =========================
+ENV
+========================= */
 
-const limiter = rateLimit({
-windowMs:60000,
-max:120
-})
+const GEMINI_KEY = process.env.GEMINI_API_KEY
+const REDIS_URL = process.env.REDIS_URL
 
-app.use(limiter)
+/* =========================
+REDIS
+========================= */
 
-/* ROOT ROUTE */
+let redis = null
 
-app.get("/",(req,res)=>{
-res.send("BetterLife AI API running 🚀")
-})
+if(REDIS_URL){
 
-/* REDIS */
-
-const redis = new Redis(process.env.REDIS_URL,{
+redis = new Redis(REDIS_URL,{
 maxRetriesPerRequest:null
 })
 
-redis.on("connect",()=>console.log("Redis connected"))
-redis.on("error",(err)=>console.log("Redis error",err))
-
-/* GEMINI */
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY
-
-const VARIATIONS = 20
-const EXPANSION_RATE = 0.15
-
-function randomItem(arr){
-return _.sample(arr)
-}
-
-/* FALLBACK */
-
-function fallbackMessages(){
-
-return [
-
-"<user>, consistency today builds the life you want 🚀",
-
-"<user>, small habits repeated daily create powerful results 💪",
-
-"<user>, improve just 1% today and success will follow 📈",
-
-"<user>, discipline today creates freedom tomorrow 🔥"
-
-]
+redis.on("connect",()=>{
+console.log("Redis connected")
+})
 
 }
 
-/* FIND WEAKEST HABIT */
-
-function findWeakestHabit(habits,completion){
-
-if(!habits || !completion) return null
-
-let min = 1
-let weakest = habits[0]
-
-for(let i=0;i<habits.length;i++){
-
-if(completion[i] < min){
-min = completion[i]
-weakest = habits[i]
-}
-
-}
-
-return weakest
-
-}
-
-/* MODEL MIX */
+/* =========================
+MODEL SELECTION
+========================= */
 
 function chooseModel(type){
 
 if(type === "monthly"){
-return "gemini-2.5-pro"
+return "gemini-2.5-flash"
 }
 
-/* 90% flash */
-
-if(Math.random() < 0.1){
-return "gemini-2.5-pro"
+if(Math.random() < 0.7){
+return "gemini-2.5-flash-lite"
 }
 
 return "gemini-2.5-flash"
 
 }
 
-/* GENERATE AI RESPONSES */
+/* =========================
+FIND WEAKEST HABIT
+========================= */
+
+function findWeakestHabit(habits,completion){
+
+if(!habits || !completion) return ""
+
+let min = 1
+let index = 0
+
+completion.forEach((v,i)=>{
+if(v < min){
+min = v
+index = i
+}
+})
+
+return habits[index] || ""
+
+}
+
+/* =========================
+GENERATE AI RESPONSES
+========================= */
 
 async function generateResponses(data,type){
 
-let prompt
+let prompt = ""
 
 if(type === "daily"){
 
@@ -117,7 +84,7 @@ const weakestHabit =
 findWeakestHabit(data.habits,data.habitCompletion)
 
 prompt = `
-You are a smart productivity life coach.
+You are a smart productivity coach.
 
 User habits:
 ${data.habits}
@@ -125,15 +92,15 @@ ${data.habits}
 Weak habit:
 ${weakestHabit}
 
-Generate ${VARIATIONS} short coaching messages.
+Generate 20 different coaching messages.
 
 Rules:
 2 lines max
-motivational
-practical advice
-sometimes include a short quote
+friendly tone
 include <user>
-use emojis
+include emojis
+short advice
+sometimes motivational quote
 each message on new line
 `
 
@@ -142,7 +109,7 @@ each message on new line
 if(type === "monthly"){
 
 prompt = `
-You are an AI productivity analyst.
+You are a productivity AI analyst.
 
 Habit score: ${data.habitScore}
 Task score: ${data.taskScore}
@@ -150,12 +117,12 @@ Task score: ${data.taskScore}
 Habits:
 ${data.habits}
 
-Generate ${VARIATIONS} monthly insights.
+Generate 20 different insights.
 
 Rules:
 short analysis
-motivational
 include <user>
+motivational
 use emojis
 each message on new line
 `
@@ -167,7 +134,7 @@ try{
 const model = chooseModel(type)
 
 const aiResponse = await fetch(
-`https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`,
+`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
 {
 method:"POST",
 headers:{
@@ -176,120 +143,183 @@ headers:{
 body:JSON.stringify({
 contents:[
 {
-parts:[{text:prompt}]
-}
+role:"user",
+parts:[
+{ text:prompt }
 ]
+}
+],
+generationConfig:{
+temperature:0.9,
+topK:40,
+topP:0.95,
+maxOutputTokens:300
+}
 })
 }
 )
 
 const result = await aiResponse.json()
 
-let text =
-result?.candidates?.[0]?.content?.parts?.[0]?.text
+console.log("GEMINI RESPONSE:",JSON.stringify(result))
+
+/* =========================
+SAFE PARSING
+========================= */
+
+let text = ""
+
+if(result && result.candidates){
+
+const parts = result.candidates[0]?.content?.parts
+
+if(parts && parts.length){
+
+text = parts
+.map(p=>p.text || "")
+.join("\n")
+
+}
+
+}
 
 console.log("AI RAW:",text)
 
-if(text){
-
-let responses =
-text
+let responses = text
 .split("\n")
 .map(t=>t.replace(/^[0-9\-\.\•]+\s*/,"").trim())
 .filter(t=>t.length > 10)
 
-  
-if(responses.length > 0){
+if(responses.length){
 return responses
 }
 
-}
+/* fallback */
 
-return fallbackMessages()
+return [
+
+"<user>, small daily actions build powerful results 🚀",
+
+"<user>, consistency today creates success tomorrow 💪",
+
+"<user>, discipline beats motivation 📈",
+
+"<user>, focus on improving one habit today 🔥"
+
+]
 
 }catch(e){
 
 console.log("Gemini error:",e)
 
-return fallbackMessages()
+return [
+
+"<user>, keep improving step by step 🚀",
+
+"<user>, progress comes from consistency 💪",
+
+"<user>, show up today even if motivation is low 📈"
+
+]
 
 }
 
 }
 
-/* AI ROUTE */
+/* =========================
+CACHE KEY
+========================= */
 
-app.post("/ai-coach", async (req,res)=>{
+function cacheKey(data,type){
 
-try{
+return type + ":" + JSON.stringify(data)
+
+}
+
+/* =========================
+AI COACH ROUTE
+========================= */
+
+app.post("/ai-coach",async(req,res)=>{
 
 console.log("REQUEST:",req.body)
 
-const {type,habit,trend} = req.body
+const data = req.body
+const type = data.type || "daily"
 
-const key = `ai:${type}:${habit}:${trend}`
+const key = cacheKey(data,type)
 
-let cached = await redis.get(key)
+try{
 
-/* CACHE HIT */
+/* =========================
+REDIS CACHE
+========================= */
+
+if(redis){
+
+const cached = await redis.get(key)
 
 if(cached){
 
-let responses = JSON.parse(cached)
-
+const list = JSON.parse(cached)
 const message =
-randomItem(responses) ||
-"<user>, keep improving step by step 🚀"
-
-/* DATASET EXPANSION */
-
-if(Math.random() < EXPANSION_RATE){
-
-const newResponses =
-await generateResponses(req.body,type)
-
-responses = _.uniq([...responses,...newResponses])
-
-await redis.set(key,JSON.stringify(responses))
-
-}
+list[Math.floor(Math.random()*list.length)]
 
 return res.json({message})
 
 }
 
-/* FIRST GENERATION */
+}
+
+/* =========================
+GENERATE AI
+========================= */
 
 const responses =
-await generateResponses(req.body,type)
+await generateResponses(data,type)
 
-await redis.set(key,JSON.stringify(responses))
+if(redis){
+
+await redis.set(
+key,
+JSON.stringify(responses)
+)
+
+}
+
+/* RANDOM MESSAGE */
 
 const message =
-randomItem(responses) ||
-"<user>, stay consistent and keep improving 🚀"
+responses[Math.floor(Math.random()*responses.length)]
 
 res.json({message})
 
-}catch(err){
+}catch(e){
 
-console.log("SERVER ERROR:",err)
+console.log("Server error:",e)
 
 res.json({
-
-message:
-"<user>, small habits today build powerful results 🚀"
-
+message:"<user>, stay consistent and keep moving forward 🚀"
 })
 
 }
 
 })
 
-/* START SERVER */
+/* =========================
+ROOT
+========================= */
+
+app.get("/",(req,res)=>{
+res.send("BetterLife AI API running 🚀")
+})
+
+/* =========================
+START
+========================= */
 
 const PORT = process.env.PORT || 8080
 
 app.listen(PORT,()=>{
-console.log("BetterLife AI API running on port",PORT)
+console.log("Server running on port",PORT)
 })
