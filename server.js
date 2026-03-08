@@ -12,8 +12,6 @@ app.use(express.json())
 app.use(helmet())
 app.use(morgan("dev"))
 
-/* RATE LIMIT */
-
 const limiter = rateLimit({
 windowMs:60000,
 max:120
@@ -66,6 +64,24 @@ weakest = habits[i]
 }
 
 return weakest
+
+}
+
+/* FALLBACK */
+
+function fallbackMessages(){
+
+return [
+
+"<user>, small daily habits build powerful results 🚀",
+
+"<user>, consistency beats motivation every time 💪",
+
+"<user>, progress comes from repeating small actions 📈",
+
+"<user>, discipline today creates freedom tomorrow 🔥"
+
+]
 
 }
 
@@ -175,29 +191,13 @@ return fallbackMessages()
 
 }
 
-function fallbackMessages(){
-
-return [
-
-"<user>, small daily habits build powerful results 🚀",
-
-"<user>, consistency beats motivation every time 💪",
-
-"<user>, progress comes from repeating small actions 📈",
-
-"<user>, keep showing up daily and success will follow 🔥"
-
-]
-
-}
-
 /* AI ROUTE */
 
 app.post("/ai-coach", async (req,res)=>{
 
 try{
 
-console.log("REQUEST BODY:",req.body)
+console.log("REQUEST:",req.body)
 
 const {type,habit,trend} = req.body
 
@@ -211,9 +211,9 @@ if(cached){
 
 let responses = JSON.parse(cached)
 
-const message = randomItem(responses)
-
-/* DATASET EXPANSION */
+const message =
+randomItem(responses) ||
+"<user>, keep improving step by step 🚀"
 
 if(Math.random() < EXPANSION_RATE){
 
@@ -237,7 +237,9 @@ await generateResponses(req.body,type)
 
 await redis.set(key,JSON.stringify(responses))
 
-const message = randomItem(responses)
+const message =
+randomItem(responses) ||
+"<user>, keep improving step by step 🚀"
 
 res.json({message})
 
